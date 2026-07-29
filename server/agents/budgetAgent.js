@@ -2,8 +2,8 @@ import { generateJSON } from '../services/geminiService.js';
 import { getCostEstimates } from '../tools/budgetTool.js';
 
 const SYSTEM_PROMPT = `You are the Budget Agent for a travel planning system.
-Provide detailed cost estimates with category breakdowns and savings tips.
-Respect the user's stated budget amount and currency if provided.
+Provide detailed cost estimates with category breakdowns and savings tips tailored specifically to the destination and travel requirements.
+Respect the user's stated budget amount, currency, or tier (budget, moderate, luxury) if provided.
 
 Output JSON:
 {
@@ -29,7 +29,7 @@ export const budgetAgent = {
       budgetCurrency: { type: 'string' },
       preferences: { type: 'string' },
     },
-    required: ['destination', 'days'],
+    required: ['destination'],
   },
   outputSchema: {
     totalCost: 'number',
@@ -40,15 +40,21 @@ export const budgetAgent = {
   },
 
   async execute(input) {
-    const { destination, days, budget, budgetAmount, budgetCurrency } = input;
-    const costData = await getCostEstimates(destination, days, budget || 'moderate');
+    const destination = input.destination || 'destination';
+    const days = input.days || 3;
+    const budgetLevel = input.budgetLevel || input.budget || 'moderate';
+    const budgetAmount = input.budgetAmount;
+    const budgetCurrency = input.budgetCurrency || 'USD';
+
+    const costData = await getCostEstimates(destination, days, budgetLevel);
 
     return generateJSON({
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: `Destination: ${destination}
 Days: ${days}
-Budget level: ${budget || 'moderate'}
-User budget cap: ${budgetAmount ? `${budgetAmount} ${budgetCurrency || 'INR'}` : 'not specified'}
+Budget level: ${budgetLevel}
+User target budget: ${budgetAmount ? `${budgetAmount} ${budgetCurrency}` : 'not specified'}
+Travel type: ${input.travelType || 'not specified'}
 Cost tool data: ${JSON.stringify(costData)}`,
       agentName: 'Budget Agent',
     });

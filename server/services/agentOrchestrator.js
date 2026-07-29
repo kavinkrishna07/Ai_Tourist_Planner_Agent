@@ -7,18 +7,30 @@ import { activityAgent } from '../agents/activityAgent.js';
 import { packingAgent } from '../agents/packingAgent.js';
 import { safetyAgent } from '../agents/safetyAgent.js';
 import { localGuideAgent } from '../agents/localGuideAgent.js';
+import { casualAgent } from '../agents/casualAgent.js';
 
-/** Registry keyed by agent id — orchestrator dispatches purely from LLM-selected ids */
+/** Registry keyed by agent id & agent name — orchestrator dispatches purely from LLM-selected ids/names */
 export const AGENT_REGISTRY = {
   weather: weatherAgent,
+  'Weather Agent': weatherAgent,
   budget: budgetAgent,
+  'Budget Agent': budgetAgent,
   route: routeAgent,
+  'Route Planner': routeAgent,
   hotel: hotelAgent,
+  'Hotel Agent': hotelAgent,
   food: foodAgent,
+  'Food Agent': foodAgent,
   activity: activityAgent,
+  'Activity Agent': activityAgent,
   packing: packingAgent,
+  'Packing Agent': packingAgent,
   safety: safetyAgent,
+  'Safety Agent': safetyAgent,
   localGuide: localGuideAgent,
+  'Local Guide': localGuideAgent,
+  casual: casualAgent,
+  'Casual Chat Agent': casualAgent,
 };
 
 export const AGENT_CATALOG = Object.values(AGENT_REGISTRY).map((a) => ({
@@ -27,22 +39,32 @@ export const AGENT_CATALOG = Object.values(AGENT_REGISTRY).map((a) => ({
   role: a.role,
 }));
 
-export async function executeSelectedAgents(selectedIds, tripContext, priorOutputs = {}, onProgress) {
+export async function executeSelectedAgents(selectedKeys, tripContext, priorOutputs = {}, onProgress) {
   const results = [];
 
   await Promise.all(
-    selectedIds.map(async (id) => {
-      const agent = AGENT_REGISTRY[id];
+    selectedKeys.map(async (key) => {
+      const agent = AGENT_REGISTRY[key];
       if (!agent) return;
 
-      onProgress?.({ type: 'agent_working', agent: agent.name, agentId: id });
+      onProgress?.({ type: 'agent_working', agent: agent.name, agentId: agent.id });
 
-      const input = { ...tripContext, priorOutputs };
-      const data = await agent.execute(input);
+      try {
+        const input = { ...tripContext, priorOutputs };
+        const data = await agent.execute(input);
 
-      const result = { agentId: id, agent: agent.name, role: agent.role, data };
-      results.push(result);
-      onProgress?.({ type: 'agent_complete', agent: agent.name, agentId: id, data });
+        const result = { agentId: agent.id, agent: agent.name, role: agent.role, data };
+        results.push(result);
+        onProgress?.({ type: 'agent_complete', agent: agent.name, agentId: agent.id, data });
+      } catch (err) {
+        console.warn(`[Orchestrator] Error executing ${agent.name}:`, err.message);
+        results.push({
+          agentId: agent.id,
+          agent: agent.name,
+          role: agent.role,
+          data: { error: true, message: `Agent failed to execute: ${err.message}` },
+        });
+      }
     })
   );
 

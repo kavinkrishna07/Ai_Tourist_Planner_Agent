@@ -3,7 +3,7 @@ import { getNearbyAttractions } from '../tools/mapTool.js';
 import { searchTravelInfo } from '../tools/searchTool.js';
 
 const SYSTEM_PROMPT = `You are the Activity Agent for a travel planning system.
-Recommend top sights and unique experiences tailored to the traveler.
+Recommend top sights and unique experiences tailored to the traveler for the specified destination.
 IMPORTANT: Respect stored user memory preferences (e.g. avoid crowded places, love beaches & nature).
 
 Output JSON:
@@ -25,7 +25,7 @@ export const activityAgent = {
       preferences: { type: 'string' },
       userMemory: { type: 'object' },
     },
-    required: ['destination', 'days'],
+    required: ['destination'],
   },
   outputSchema: {
     topSights: 'array',
@@ -33,15 +33,20 @@ export const activityAgent = {
   },
 
   async execute(input) {
-    const { destination, days, preferences, userMemory } = input;
+    const destination = input.destination || 'destination';
+    const days = input.days || 3;
+    const { preferences, travelType, specialRequirements, userMemory } = input;
+
     const attractions = await getNearbyAttractions(destination);
-    const searchData = await searchTravelInfo(destination, 'things to do activities');
+    const searchData = await searchTravelInfo(destination, 'things to do activities sights');
 
     return generateJSON({
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: `Destination: ${destination}
 Days: ${days}
+Travel Type: ${travelType || 'general'}
 Preferences: ${preferences || 'general sightseeing'}
+Special Requirements: ${JSON.stringify(specialRequirements || [])}
 Stored User Memory: ${JSON.stringify(userMemory || {})}
 Attractions: ${JSON.stringify(attractions)}
 Search data: ${JSON.stringify(searchData)}`,

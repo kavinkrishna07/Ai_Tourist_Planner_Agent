@@ -4,6 +4,7 @@ import { webSearch } from '../tools/searchTool.js';
 
 const SYSTEM_PROMPT = `You are the Weather Agent for a travel planning system.
 Analyze weather data and provide forecasts, temperature ranges, and packing hints.
+Do NOT use hardcoded or generic mock locations. Use the actual destination specified.
 
 Output JSON:
 {
@@ -25,7 +26,7 @@ export const weatherAgent = {
       days: { type: 'number' },
       preferences: { type: 'string' },
     },
-    required: ['destination', 'days'],
+    required: ['destination'],
   },
   outputSchema: {
     forecast: 'array',
@@ -35,7 +36,8 @@ export const weatherAgent = {
   },
 
   async execute(input) {
-    const { destination, days } = input;
+    const destination = input.destination || 'destination';
+    const days = input.days || 3;
     const weatherData = await getWeatherForecast(destination, days);
     const searchData = await webSearch(`${destination} weather forecast travel`, 3);
 

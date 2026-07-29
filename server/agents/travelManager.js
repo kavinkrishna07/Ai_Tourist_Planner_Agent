@@ -13,7 +13,7 @@ import { memoryAgent } from './memoryAgent.js';
 
 export const travelManagerAgent = {
   name: 'Travel Manager',
-  role: 'Coordinates specialist agents and synthesizes a cohesive day-by-day itinerary',
+  role: 'Coordinates specialist agents dynamically based on extracted user intent, context, and memory',
 };
 
 const AGENT_RUNNERS = {
@@ -30,173 +30,243 @@ const AGENT_RUNNERS = {
   'Packing Agent': packingAgent,
 };
 
-function extractDestination(message) {
-  if (!message) return 'Paris';
+const INTENT_SYSTEM_PROMPT = `You are the Travel Manager (Intent & Context Extractor) for an AI Travel Planner system.
+Your job is to analyze the user's message, current context, and stored long-term preferences, and return a structured JSON decision.
 
-  const lower = message.toLowerCase();
-  if (lower.includes('new your') || lower.includes('newyork') || lower.includes('new york')) return 'New York';
-  if (lower.includes('los angeles')) return 'Los Angeles';
-  if (lower.includes('san francisco')) return 'San Francisco';
-  if (lower.includes('kuala lumpur')) return 'Kuala Lumpur';
+AVAILABLE SPECIALIST AGENTS:
+- "Casual Chat Agent": Handles casual greetings (hi, hello, how are you), general chitchat, or non-travel queries.
+- "Weather Agent": Provides weather forecasts, temperature ranges, and weather tips.
+- "Budget Agent": Estimates total trip cost, breakdown by categories, and savings tips.
+- "Route Planner": Organizes day-by-day routes, attraction groupings, local transport, and flight schedules.
+- "Hotel Agent": Recommends accommodations across budget tiers and best neighborhoods to stay.
+- "Food Agent": Recommends must-try local dishes and specific restaurant suggestions matching dietary preferences.
+- "Activity Agent": Suggests top sights, attractions, and unique experiences.
+- "Packing Agent": Generates customized packing checklists tailored to weather and trip length.
+- "Safety Agent": Provides health, safety advisories, emergency numbers, and cultural dos and don'ts.
+- "Local Guide": Shares cultural etiquette, hidden gems, and useful local language phrases.
 
-  const stopWords = ['starting', 'from', 'with', 'and', 'for', 'the', 'middle', 'august', 'july', 'june', 'september', 'october', 'november', 'december', 'january', 'february', 'march', 'april', 'may', 'days', 'day', 'trip', 'flight', 'flights', 'weather', 'hotel', 'hotels', 'budget', 'food'];
-
-  const match = message.match(/(?:to|visit|in|for|explore|around)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
-  if (match && match[1]) {
-    const parts = match[1].trim().split(/\s+/);
-    const valid = parts.filter(w => !stopWords.includes(w.toLowerCase()));
-    if (valid.length > 0) return valid.join(' ');
-  }
-
-  const words = message.split(/[\s,.\!?]+/);
-  for (const w of words) {
-    const clean = w.replace(/[^a-zA-Z]/g, '');
-    if (clean.length > 2 && !stopWords.includes(clean.toLowerCase()) && !['Plan', 'Trip', 'Days', 'With', 'Weather', 'Flights', 'Show', 'Help', 'Can', 'Need'].includes(clean)) {
-      return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
-    }
-  }
-
-  return 'Bali';
-}
-
-function extractDays(message) {
-  if (!message) return 3;
-  const match = message.match(/(\d+)\s*[-_\s]?(?:day|days)/i);
-  return match ? parseInt(match[1], 10) : 3;
-}
-
-export async function runTravelManager(tripContext, onAgentComplete) {
-  const message = tripContext.message || `Plan a ${tripContext.days || 3}-day trip to ${tripContext.destination || 'Paris'} with a ${tripContext.budget || 'moderate'} budget`;
-  
-  // Step 0: Memory Processing
-  if (onAgentComplete) onAgentComplete('Memory Agent');
-  await memoryAgent.saveConversation('user', message);
-  await memoryAgent.extractAndUpdatePreferences(message);
-  const userMemory = await memoryAgent.getMemory();
-
-  const destination = tripContext.destination || extractDestination(message);
-  const days = tripContext.days || extractDays(message);
-  const updatedContext = { 
-    ...tripContext, 
-    message, 
-    destination, 
-    days,
-    userMemory: userMemory.preferences
-  };
-
-  if (onAgentComplete) onAgentComplete('Travel Manager');
-
-  const isCasualGreeting = message ? /^(hi|hii|hiii|hello|hey|heyy|greetings|howdy|sup|who are you|how are you|what can you do|good morning|good evening|good afternoon)[\s!\?]*$/i.test(message.trim()) : false;
-
-  let requiredAgents = [];
-  if (isCasualGreeting) {
-    requiredAgents = ['Casual Chat Agent'];
-  } else {
-    // Step 1: Use LLM to determine which agents to run
-    const routingPrompt = `You are the Travel Manager Agent. 
-Determine which specialist agents are needed to answer the user's travel request.
-Available agents: ${Object.keys(AGENT_RUNNERS).filter(a => a !== 'Memory Agent').join(', ')}.
-User request: "${message}"
-Stored User Preferences: ${JSON.stringify(userMemory.preferences)}
+ROUTING RULES:
+1. If the message is a casual greeting or small talk -> set "intentCategory" to "casual_chat" and select ["Casual Chat Agent"].
+2. If the user asks for a specific topic (e.g., "What's the weather in Tokyo?"), select ONLY the relevant agents (e.g., ["Weather Agent"]).
+3. If the user asks for a trip plan (e.g., "Plan a 5-day trip to Paris"), select all relevant specialist agents (e.g., ["Weather Agent", "Budget Agent", "Hotel Agent", "Food Agent", "Activity Agent", "Route Planner", "Packing Agent", "Local Guide", "Safety Agent"]).
+4. Extract structured details dynamically without inserting hardcoded fallback values.
 
 Output JSON schema:
 {
-  "selectedAgents": ["string - name of agent"]
+  "intentCategory": "trip_planning | specific_query | casual_chat | clarifying_response",
+  "extractedContext": {
+    "destination": "string or null",
+    "origin": "string or null",
+    "days": "number or null",
+    "budgetLevel": "luxury | moderate | budget or null",
+    "budgetAmount": "number or null",
+    "budgetCurrency": "string or null",
+    "travelType": "solo | family | couple | friends | business or null",
+    "preferences": ["array of strings"],
+    "specialRequirements": ["array of strings"]
+  },
+  "selectedAgents": ["array of string names from available agents"],
+  "missingInformation": ["array of strings, e.g. 'destination' if user wants a full trip plan but didn't specify destination"]
 }`;
 
-    try {
-      const routingResult = await generateJSON({
-        systemPrompt: routingPrompt,
-        userPrompt: 'Which agents do we need?',
-        schema: {},
-        agentName: 'Travel Manager (Routing)'
-      });
-      requiredAgents = routingResult.selectedAgents || [];
-    } catch (err) {
-      console.error('Routing error, defaulting to essential agents', err);
-      requiredAgents = ['Weather Agent', 'Activity Agent'];
-    }
+export async function runTravelManager(tripContext, onAgentComplete) {
+  const message = tripContext.message || '';
+
+  // Step 0: Memory Processing
+  if (onAgentComplete) onAgentComplete('Memory Agent');
+  if (message) {
+    await memoryAgent.saveConversation('user', message);
+    await memoryAgent.extractAndUpdatePreferences(message);
+  }
+  const userMemory = await memoryAgent.getMemory();
+
+  if (onAgentComplete) onAgentComplete('Travel Manager');
+
+  // Step 1: Dynamic LLM Intent & Context Extraction
+  let intentData;
+  try {
+    intentData = await generateJSON({
+      systemPrompt: INTENT_SYSTEM_PROMPT,
+      userPrompt: `User Message: "${message}"
+Input Context: ${JSON.stringify({
+        destination: tripContext.destination || null,
+        days: tripContext.days || null,
+        budget: tripContext.budget || null,
+        preferences: tripContext.preferences || null,
+      })}
+Stored User Memory: ${JSON.stringify(userMemory.preferences)}`,
+      schema: {},
+      agentName: 'Travel Manager (Intent Extractor)',
+    });
+  } catch (err) {
+    console.warn('[Travel Manager] LLM Intent Extraction warning:', err.message);
+    intentData = {
+      intentCategory: tripContext.destination ? 'trip_planning' : 'casual_chat',
+      extractedContext: {
+        destination: tripContext.destination || null,
+        days: tripContext.days || null,
+        budgetLevel: tripContext.budget || null,
+        preferences: tripContext.preferences ? [tripContext.preferences] : [],
+      },
+      selectedAgents: tripContext.destination ? ['Weather Agent', 'Activity Agent', 'Hotel Agent', 'Food Agent'] : ['Casual Chat Agent'],
+      missingInformation: [],
+    };
   }
 
-  // Filter to valid agents
-  const validAgents = requiredAgents.filter(a => AGENT_RUNNERS[a] && a !== 'Memory Agent');
-  
+  // Merge extracted context with incoming context
+  const extracted = intentData?.extractedContext || {};
+  const destination = extracted.destination || tripContext.destination || null;
+  const days = extracted.days || tripContext.days || null;
+  const budgetLevel = extracted.budgetLevel || tripContext.budget || null;
+  const preferences = Array.from(new Set([
+    ...(extracted.preferences || []),
+    ...(tripContext.preferences ? [tripContext.preferences] : []),
+  ])).join(', ');
+
+  const mergedContext = {
+    ...tripContext,
+    message,
+    destination,
+    days,
+    budgetLevel,
+    budgetAmount: extracted.budgetAmount || null,
+    budgetCurrency: extracted.budgetCurrency || null,
+    travelType: extracted.travelType || null,
+    preferences,
+    specialRequirements: extracted.specialRequirements || [],
+    userMemory: userMemory.preferences,
+  };
+
+  // Step 2: Handle Missing Destination for Trip Planning
+  if (intentData.intentCategory === 'trip_planning' && !destination) {
+    const missingDestPrompt = `You are the Travel Manager Agent. 
+The user wants to plan a trip, but has not specified a destination.
+User message: "${message}"
+Stored User Preferences: ${JSON.stringify(userMemory.preferences)}
+
+Politely ask the user for their preferred destination. Offer 3 tailored destination suggestions based on their stored user preferences (e.g. beaches, nature, budget, luxury).`;
+
+    const clarificationResponse = await generateJSON({
+      systemPrompt: missingDestPrompt,
+      userPrompt: 'Ask the user for destination and suggest options based on memory.',
+      schema: {},
+      agentName: travelManagerAgent.name,
+    });
+
+    const finalResponse = clarificationResponse.response || 
+      `Where would you like to travel? Tell me your destination and how many days you're planning, and I'll create a custom trip for you!`;
+
+    await memoryAgent.saveConversation('assistant', finalResponse);
+
+    return {
+      response: finalResponse,
+      extractedContext: mergedContext,
+      userMemory: userMemory.preferences,
+      agents: [{ agent: 'Memory Agent', role: memoryAgent.role, data: userMemory.preferences }],
+    };
+  }
+
+  // Step 3: Determine and Validate Agents to Run
+  let rawSelected = intentData.selectedAgents || [];
+  if (!Array.isArray(rawSelected) || rawSelected.length === 0) {
+    rawSelected = intentData.intentCategory === 'casual_chat' ? ['Casual Chat Agent'] : ['Activity Agent', 'Weather Agent'];
+  }
+
+  const validAgents = rawSelected.filter(a => AGENT_RUNNERS[a] && a !== 'Memory Agent');
   if (validAgents.length === 0) {
-    validAgents.push('Activity Agent');
+    validAgents.push(intentData.intentCategory === 'casual_chat' ? 'Casual Chat Agent' : 'Activity Agent');
   }
 
+  // Step 4: Execute Selected Agents dynamically
   const agentOutputs = [];
 
-  // Step 2: Run selected agents sequentially with minor throttling
   for (const agentName of validAgents) {
     const agent = AGENT_RUNNERS[agentName];
     try {
-      const data = await agent.execute(updatedContext);
-      const result = { agent: agent.name, role: agent.role, data: data };
       if (onAgentComplete) onAgentComplete(agent.name);
-      agentOutputs.push(result);
-      await new Promise(r => setTimeout(r, 150));
+      const data = await agent.execute(mergedContext);
+      agentOutputs.push({ agent: agent.name, role: agent.role, data });
+      await new Promise(r => setTimeout(r, 100));
     } catch (err) {
-      console.warn(`[Travel Manager] ${agentName} execution warning:`, err.message);
+      console.warn(`[Travel Manager] ${agentName} execution error:`, err.message);
+      agentOutputs.push({
+        agent: agent.name,
+        role: agent.role,
+        data: { warning: `Could not retrieve details from ${agent.name}: ${err.message}` },
+      });
     }
   }
 
-  const synthesis = await synthesizeItinerary(updatedContext, agentOutputs, userMemory.preferences);
+  // Step 5: Synthesize Final Output
+  const synthesis = await synthesizeItinerary(mergedContext, agentOutputs, userMemory.preferences, intentData);
 
-  // Save Assistant response and generated trip to Memory
+  // Save Assistant response and trip details to Memory
   if (synthesis?.response) {
     await memoryAgent.saveConversation('assistant', synthesis.response);
   }
-  if (!isCasualGreeting && destination) {
-    await memoryAgent.saveTripPlan({ destination, days, budget: updatedContext.budget, preferences: message, planData: synthesis });
+  if (intentData.intentCategory === 'trip_planning' && destination) {
+    await memoryAgent.saveTripPlan({
+      destination,
+      days: days || 3,
+      budget: budgetLevel || 'moderate',
+      preferences,
+      planData: synthesis,
+    });
   }
 
   return {
     ...synthesis,
+    extractedContext: mergedContext,
     userMemory: userMemory.preferences,
     agents: [
       { agent: 'Memory Agent', role: memoryAgent.role, data: userMemory.preferences },
-      ...agentOutputs.map(({ agent, role, data }) => ({ agent, role, data }))
+      ...agentOutputs,
     ],
   };
 }
 
-async function synthesizeItinerary(tripContext, agentOutputs, userMemoryPreferences) {
+async function synthesizeItinerary(tripContext, agentOutputs, userMemoryPreferences, intentData) {
   const { message } = tripContext;
 
-  const systemPrompt = `You are the Travel Manager Agent — the coordinator of a multi-agent travel planning system.
-Your role: Synthesize outputs from specialist agents to answer the user's travel request.
-Ensure your response directly addresses their request in a helpful, conversational manner. Use Markdown formatting.
-Honor stored user memory preferences (e.g. accommodation preferences, food choices, avoided things).
+  const systemPrompt = `You are the Travel Manager Agent — the coordinator of a multi-agent AI travel planning system.
+Your role: Synthesize outputs from specialist agents into a clear, engaging, and well-structured markdown response answering the user's request.
+Requirements:
+1. Direct Answer: Directly address the user's specific request.
+2. Structured Layout: Use Markdown headings, bullet points, and clean formatting.
+3. Tailored Experience: Honor stored user memory preferences (e.g. food choices, accommodation tiers, avoided items).
+4. No Robotic Defaults: Do not insert arbitrary default locations if not requested.
 
 Output JSON schema:
 {
   "response": "string — The final synthesized response answering the user's message using the agent outputs."
 }`;
 
-  const agentSummary = agentOutputs.map(({ agent, data }) => ({
-    agent,
-    data,
-  }));
+  const agentSummary = agentOutputs.map(({ agent, data }) => ({ agent, data }));
 
   const userPrompt = `User Request: "${message}"
+Extracted Context: ${JSON.stringify(intentData?.extractedContext || {})}
+Stored User Memory: ${JSON.stringify(userMemoryPreferences || {})}
 
-Stored Long-Term User Preferences:
-${JSON.stringify(userMemoryPreferences, null, 2)}
-
-Specialist agent outputs:
+Specialist Agent Outputs:
 ${JSON.stringify(agentSummary, null, 2)}
 
-Synthesize a comprehensive, conversational response. Use Markdown formatting.`;
+Synthesize a comprehensive, friendly, and structured Markdown response.`;
 
-  const result = await generateJSON({
-    systemPrompt,
-    userPrompt,
-    schema: {},
-    agentName: travelManagerAgent.name,
-  });
-
-  return result;
+  try {
+    const result = await generateJSON({
+      systemPrompt,
+      userPrompt,
+      schema: {},
+      agentName: travelManagerAgent.name,
+    });
+    return result;
+  } catch (err) {
+    console.error('[Travel Manager] Synthesis error:', err.message);
+    const fallbackText = agentOutputs.map(a => `### ${a.agent}\n${JSON.stringify(a.data, null, 2)}`).join('\n\n');
+    return {
+      response: `Here is the information compiled by our specialist travel agents for your request:\n\n${fallbackText}`
+    };
+  }
 }
 
 export const AGENT_LIST = [

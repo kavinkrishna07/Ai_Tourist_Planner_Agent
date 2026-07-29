@@ -54,17 +54,19 @@ app.post('/api/plan', async (req, res) => {
   try {
     const { destination, days, budget, preferences, message } = req.body;
 
-    const dest = destination?.trim() || (message ? 'Kerala' : null);
-    if (!dest) {
+    const rawMessage = message?.trim() || 
+      (destination ? `Plan a ${days ? `${days}-day ` : ''}trip to ${destination}${budget ? ` with a ${budget} budget` : ''}${preferences ? `. Preferences: ${preferences}` : ''}` : '');
+
+    if (!rawMessage && !destination) {
       return res.status(400).json({ error: 'Destination or message is required' });
     }
 
     const tripContext = {
-      message: message || `Plan a ${days || 5}-day trip to ${dest} with a ${budget || 'luxury'} budget`,
-      destination: dest,
-      days: days || 5,
-      budget: budget || 'luxury',
-      preferences: preferences || '',
+      message: rawMessage,
+      destination: destination?.trim() || null,
+      days: days ? Number(days) : null,
+      budget: budget?.trim() || null,
+      preferences: preferences?.trim() || '',
     };
 
     const plan = await runTravelManager(tripContext);
@@ -72,9 +74,9 @@ app.post('/api/plan', async (req, res) => {
     res.json({
       ...plan,
       meta: {
-        destination: tripContext.destination,
-        days: tripContext.days,
-        budget: tripContext.budget,
+        destination: plan?.extractedContext?.destination || tripContext.destination,
+        days: plan?.extractedContext?.days || tripContext.days,
+        budget: plan?.extractedContext?.budgetLevel || tripContext.budget,
         preferences: tripContext.preferences,
         generatedAt: new Date().toISOString(),
         llmMode: isLLMConfigured() ? 'grok' : 'mock',

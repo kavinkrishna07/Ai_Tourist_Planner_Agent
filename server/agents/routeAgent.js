@@ -27,10 +27,11 @@ export const routeAgent = {
     type: 'object',
     properties: {
       destination: { type: 'string' },
+      origin: { type: 'string' },
       days: { type: 'number' },
       preferences: { type: 'string' },
     },
-    required: ['destination', 'days'],
+    required: ['destination'],
   },
   outputSchema: {
     dailyRoutes: 'array',
@@ -39,15 +40,21 @@ export const routeAgent = {
   },
 
   async execute(input) {
-    const { destination, days, preferences } = input;
+    const destination = input.destination || 'destination';
+    const origin = input.origin || 'Airport';
+    const days = input.days || 3;
+    const { preferences, travelType } = input;
+
     const attractions = await getNearbyAttractions(destination);
-    const sampleRoute = await getRouteInfo('Airport', destination);
+    const sampleRoute = await getRouteInfo(origin, destination);
     const flightData = await getLiveFlights(destination);
 
     return generateJSON({
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: `Destination: ${destination}
+Origin: ${origin}
 Days: ${days}
+Travel Type: ${travelType || 'general'}
 Preferences: ${preferences || 'none'}
 Live Geocoded Attractions: ${JSON.stringify(attractions)}
 Live Route Calculation: ${JSON.stringify(sampleRoute)}

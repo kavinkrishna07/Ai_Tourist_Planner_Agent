@@ -13,11 +13,11 @@ export const safetyAgent = {
   },
 
   async execute(input) {
-    const { destination } = input;
-    const searchData = await searchTravelInfo(destination, 'safety travel advisory health');
+    const destination = input.destination || 'destination';
+    const searchData = await searchTravelInfo(destination, 'safety travel advisory health emergency');
 
     const systemPrompt = `You are the Safety Agent for a travel planning system.
-Your role: Provide health and security advice, emergency contacts, and cultural dos/don'ts for safe travel.
+Your role: Provide health and security advice, emergency contacts, and cultural dos/don'ts for safe travel in the specified destination.
 
 Output JSON schema:
 {
@@ -35,9 +35,10 @@ Output JSON schema:
 }`;
 
     const userPrompt = `Destination: ${destination}
+Travel type: ${input.travelType || 'general'}
 Search data: ${JSON.stringify(searchData)}
 
-Provide safety information for this destination.`;
+Provide comprehensive safety information.`;
 
     return generateJSON({
       systemPrompt,

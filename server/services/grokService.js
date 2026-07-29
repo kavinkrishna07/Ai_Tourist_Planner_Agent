@@ -25,9 +25,9 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
   }
 
   const primaryModel = process.env.GROQ_MODEL || process.env.GROK_MODEL || 'llama-3.3-70b-versatile';
-  const fallbackModels = ['llama-3.1-8b-instant', 'mixtral-8x7b-32768'];
+  const fallbackModels = ['llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
 
-  // Try primary model first
+  // Try primary model first, followed by fast fallback models
   for (const model of [primaryModel, ...fallbackModels]) {
     try {
       console.log(`[${agentName}] Querying Grok API with model: ${model}...`);
@@ -41,13 +41,17 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
         temperature: 0.7,
       });
 
-      const text = response.choices[0]?.message?.content?.trim();
+      let text = response.choices[0]?.message?.content?.trim();
       if (!text) throw new Error(`[${agentName}] Empty response from Grok API (${model})`);
+
+      // Clean potential markdown backticks
+      if (text.startsWith('```')) {
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      }
 
       return JSON.parse(text);
     } catch (err) {
       console.warn(`[${agentName}] Grok API (${model}) error:`, err.message);
-      // Continue loop to try fallback model if available
     }
   }
 

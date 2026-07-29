@@ -2,7 +2,8 @@ import { generateJSON } from '../services/geminiService.js';
 import { webSearch } from '../tools/searchTool.js';
 
 const SYSTEM_PROMPT = `You are the Hotel Agent for a travel planning system.
-Recommend 3-4 accommodations across budget tiers and identify best areas to stay. Honor stored user memory preferences (e.g., budget hotels, boutique stays).
+Recommend 3-4 accommodations across budget tiers and identify best areas to stay in the specified destination.
+Honor stored user memory preferences (e.g. budget hotels, luxury stays, boutique stays).
 
 Output JSON:
 {
@@ -31,7 +32,7 @@ export const hotelAgent = {
       preferences: { type: 'string' },
       userMemory: { type: 'object' },
     },
-    required: ['destination', 'days'],
+    required: ['destination'],
   },
   outputSchema: {
     bestAreas: 'string[]',
@@ -39,14 +40,20 @@ export const hotelAgent = {
   },
 
   async execute(input) {
-    const { destination, days, budget, budgetAmount, userMemory } = input;
+    const destination = input.destination || 'destination';
+    const days = input.days || 3;
+    const budget = input.budgetLevel || input.budget || 'moderate';
+    const { budgetAmount, userMemory, travelType, specialRequirements } = input;
+
     const searchData = await webSearch(`${destination} best hotels areas to stay`, 5);
 
     return generateJSON({
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: `Destination: ${destination}
 Days: ${days}
-Budget: ${budget || 'moderate'}${budgetAmount ? ` (max ~${budgetAmount})` : ''}
+Budget: ${budget}${budgetAmount ? ` (Target: ${budgetAmount})` : ''}
+Travel Type: ${travelType || 'general'}
+Special Requirements: ${JSON.stringify(specialRequirements || [])}
 Stored User Memory: ${JSON.stringify(userMemory || {})}
 Search data: ${JSON.stringify(searchData)}`,
       agentName: 'Hotel Agent',

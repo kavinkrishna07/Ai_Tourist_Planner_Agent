@@ -12,11 +12,11 @@ export const localGuideAgent = {
   },
 
   async execute(input) {
-    const { destination } = input;
-    const searchData = await searchTravelInfo(destination, 'culture etiquette hidden gems local tips');
+    const destination = input.destination || 'destination';
+    const searchData = await searchTravelInfo(destination, 'culture etiquette hidden gems local tips phrases');
 
     const systemPrompt = `You are the Local Guide Agent for a travel planning system.
-Your role: Share cultural etiquette, off-the-beaten-path hidden gems, and useful local phrases.
+Your role: Share cultural etiquette, off-the-beaten-path hidden gems, and useful local phrases for the specified destination.
 
 Output JSON schema:
 {
