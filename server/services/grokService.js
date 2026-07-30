@@ -27,6 +27,8 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
   const primaryModel = process.env.GROQ_MODEL || process.env.GROK_MODEL || 'llama-3.3-70b-versatile';
   const fallbackModels = ['llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
 
+  let rateLimitHit = false;
+
   // Try primary model first, followed by fast fallback models
   for (const model of [primaryModel, ...fallbackModels]) {
     try {
@@ -51,12 +53,19 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
 
       return JSON.parse(text);
     } catch (err) {
+      if (err.message?.includes('429') || err.message?.includes('Rate limit') || err.message?.includes('TPD')) {
+        rateLimitHit = true;
+      }
       console.warn(`[${agentName}] Grok API (${model}) error:`, err.message);
     }
   }
 
-  console.warn(`[${agentName}] All Grok models exhausted or errored. Using simulation fallback.`);
-  return generateMockJSONResponse(agentName, userPrompt);
+  console.warn(`[${agentName}] All Grok models exhausted or errored (Rate limit hit: ${rateLimitHit}). Using fallback.`);
+  const mock = generateMockJSONResponse(agentName, userPrompt);
+  if (rateLimitHit && agentName === 'Travel Manager') {
+    mock.response = `⚠️ **Groq API Rate Limit Reached (429)**: The daily token limit for your free Groq API key has been exceeded.\n\nTo resume full real-time AI capabilities, please update your \`GROQ_API_KEY\` in your \`.env\` file.\n\n${mock.response || ''}`;
+  }
+  return mock;
 }
 
 export async function generateText({ systemPrompt, userPrompt }) {

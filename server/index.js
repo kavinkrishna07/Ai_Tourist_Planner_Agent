@@ -126,7 +126,11 @@ app.get('/api/chat', async (req, res) => {
     res.end();
   } catch (err) {
     console.error('Chat error:', err);
-    sendEvent('error', { message: err.message });
+    let userMsg = err.message || 'Failed to process request.';
+    if (userMsg.includes('429') || userMsg.includes('Rate limit') || userMsg.includes('TPD')) {
+      userMsg = '⚠️ **Groq API Rate Limit Reached (429)**: The daily token quota for your current `GROQ_API_KEY` has been exceeded. Please update your `GROQ_API_KEY` in your `.env` file to resume AI planning.';
+    }
+    sendEvent('error', { message: userMsg });
     res.end();
   }
 });

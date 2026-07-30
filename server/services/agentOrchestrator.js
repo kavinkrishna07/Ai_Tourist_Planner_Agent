@@ -8,6 +8,7 @@ import { packingAgent } from '../agents/packingAgent.js';
 import { safetyAgent } from '../agents/safetyAgent.js';
 import { localGuideAgent } from '../agents/localGuideAgent.js';
 import { casualAgent } from '../agents/casualAgent.js';
+import { emailAgent } from '../agents/emailAgent.js';
 
 /** Registry keyed by agent id & agent name — orchestrator dispatches purely from LLM-selected ids/names */
 export const AGENT_REGISTRY = {
@@ -31,6 +32,8 @@ export const AGENT_REGISTRY = {
   'Local Guide': localGuideAgent,
   casual: casualAgent,
   'Casual Chat Agent': casualAgent,
+  email: emailAgent,
+  'Email Agent': emailAgent,
 };
 
 export const AGENT_CATALOG = Object.values(AGENT_REGISTRY).map((a) => ({

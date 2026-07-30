@@ -10,6 +10,7 @@ import { safetyAgent } from './safetyAgent.js';
 import { localGuideAgent } from './localGuideAgent.js';
 import { casualAgent } from './casualAgent.js';
 import { memoryAgent } from './memoryAgent.js';
+import { emailAgent } from './emailAgent.js';
 
 export const travelManagerAgent = {
   name: 'Travel Manager',
@@ -28,6 +29,7 @@ const AGENT_RUNNERS = {
   'Safety Agent': safetyAgent,
   'Local Guide': localGuideAgent,
   'Packing Agent': packingAgent,
+  'Email Agent': emailAgent,
 };
 
 const INTENT_SYSTEM_PROMPT = `You are the Travel Manager (Intent & Context Extractor) for an AI Travel Planner system.
@@ -44,12 +46,14 @@ AVAILABLE SPECIALIST AGENTS:
 - "Packing Agent": Generates customized packing checklists tailored to weather and trip length.
 - "Safety Agent": Provides health, safety advisories, emergency numbers, and cultural dos and don'ts.
 - "Local Guide": Shares cultural etiquette, hidden gems, and useful local language phrases.
+- "Email Agent": Formats and delivers the generated travel plan or itinerary to an email address. Select this if the user asks to email, send, mail, or forward the plan or provides an email address.
 
 ROUTING RULES:
 1. If the message is a casual greeting or small talk -> set "intentCategory" to "casual_chat" and select ["Casual Chat Agent"].
 2. If the user asks for a specific topic (e.g., "What's the weather in Tokyo?"), select ONLY the relevant agents (e.g., ["Weather Agent"]).
 3. If the user asks for a trip plan (e.g., "Plan a 5-day trip to Paris"), select all relevant specialist agents (e.g., ["Weather Agent", "Budget Agent", "Hotel Agent", "Food Agent", "Activity Agent", "Route Planner", "Packing Agent", "Local Guide", "Safety Agent"]).
-4. Extract structured details dynamically without inserting hardcoded fallback values.
+4. If the user asks to send/email the plan or mentions an email address -> include "Email Agent" in selectedAgents.
+5. Extract structured details dynamically without inserting hardcoded fallback values.
 
 Output JSON schema:
 {
@@ -144,17 +148,18 @@ The user wants to plan a trip, but has not specified a destination.
 User message: "${message}"
 Stored User Preferences: ${JSON.stringify(userMemory.preferences)}
 
-Politely ask the user for their preferred destination. Offer 3 tailored destination suggestions based on their stored user preferences (e.g. beaches, nature, budget, luxury).`;
+Politely ask the user for their preferred destination. Offer 3 tailored destination suggestions based on their stored user preferences (e.g. beaches, nature, budget, luxury).
+At the very end of your response, ALWAYS include 3 distinct follow-up questions under a "### ❓ What would you like to explore next?" heading so the user can easily continue.`;
 
     const clarificationResponse = await generateJSON({
       systemPrompt: missingDestPrompt,
-      userPrompt: 'Ask the user for destination and suggest options based on memory.',
+      userPrompt: 'Ask the user for destination, suggest options based on memory, and include 3 follow-up questions at the end.',
       schema: {},
       agentName: travelManagerAgent.name,
     });
 
     const finalResponse = clarificationResponse.response || 
-      `Where would you like to travel? Tell me your destination and how many days you're planning, and I'll create a custom trip for you!`;
+      `Where would you like to travel? Tell me your destination and how many days you're planning, and I'll create a custom trip for you!\n\n### ❓ What would you like to explore next?\n1. Would you like destination recommendations based on your preferences?\n2. What is your estimated budget for this trip?\n3. Are you traveling solo, with family, or with friends?`;
 
     await memoryAgent.saveConversation('assistant', finalResponse);
 
@@ -235,6 +240,7 @@ Requirements:
 2. Structured Layout: Use Markdown headings, bullet points, and clean formatting.
 3. Tailored Experience: Honor stored user memory preferences (e.g. food choices, accommodation tiers, avoided items).
 4. No Robotic Defaults: Do not insert arbitrary default locations if not requested.
+5. ALWAYS end your response with 3 specific, engaging follow-up questions under a "### ❓ What would you like to explore next?" heading so the user can easily continue the conversation.
 
 Output JSON schema:
 {
@@ -281,5 +287,6 @@ export const AGENT_LIST = [
   { name: 'Packing Agent', icon: '🧳' },
   { name: 'Safety Agent', icon: '🛡️' },
   { name: 'Local Guide', icon: '🌍' },
+  { name: 'Email Agent', icon: '📧' },
   { name: 'Travel Manager', icon: '✈️' },
 ];

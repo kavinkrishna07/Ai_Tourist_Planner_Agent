@@ -13,6 +13,7 @@ const AGENT_ICONS = {
   'Packing Agent': '🧳',
   'Safety Agent': '🛡️',
   'Local Guide': '🌍',
+  'Email Agent': '📧',
   'Travel Manager': '✈️',
 };
 
@@ -90,8 +91,15 @@ export default function App() {
     });
 
     eventSource.addEventListener('error', (e) => {
-      console.error('SSE Error:', e);
-      setMessages(prev => [...prev, { role: 'assistant', text: 'Sorry, there was an error generating your plan.' }]);
+      console.error('SSE Error event:', e);
+      let displayMsg = '⚠️ **Connection or API Limit Notice**: An error occurred while generating your plan. If you are using a free Groq API key, you may have reached the daily token limit (429). Please update `GROQ_API_KEY` in `.env`.';
+      if (e.data) {
+        try {
+          const parsed = JSON.parse(e.data);
+          if (parsed.message) displayMsg = parsed.message;
+        } catch (_) {}
+      }
+      setMessages(prev => [...prev, { role: 'assistant', text: displayMsg }]);
       setIsLoading(false);
       setActiveAgents([]);
       eventSource.close();
