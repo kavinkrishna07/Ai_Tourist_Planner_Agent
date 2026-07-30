@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
+import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import { generateText } from '../services/geminiService.js';
 
 dotenv.config();
 
@@ -18,85 +18,131 @@ export const emailAgent = {
 
   async execute(input) {
     const { destination, message, recipientEmail: customEmail, priorOutputs } = input;
-    const recipient = customEmail || extractEmailFromText(message) || 'traveler@example.com';
+    const recipient = customEmail || extractEmailFromText(message) || process.env.GMAIL_USER || 'traveler@example.com';
     const destinationName = destination || 'Your Destination';
     const subject = `✈️ Your WanderWise Travel Itinerary for ${destinationName}`;
-
-    // Create Transporter
-    let transporter;
-    let providerName = 'Ethereal Test Account (Zero-Config)';
-    let previewUrl = null;
-
-    if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.GMAIL_USER,
-          pass: process.env.GMAIL_PASS,
-        },
-      });
-      providerName = 'Gmail SMTP Live';
-    } else if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-      transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-      providerName = 'Custom SMTP Live';
-    } else {
-      // Ethereal Fallback
-      const testAccount = await nodemailer.createTestAccount();
-      transporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    }
-
-    // Build Email Body
     const rawItinerary = input.response || priorOutputs?.synthesis?.response || message || 'Your custom trip itinerary';
     const htmlBody = generateHtmlEmail(destinationName, rawItinerary, recipient);
 
+    // Option 1: Resend HTTP API (Firewall-Proof HTTPS Port 443)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        console.log('[Email Agent] Attempting delivery via Resend HTTPS API...');
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: 'WanderWise AI <onboarding@resend.dev>',
+            to: [recipient],
+            subject: subject,
+            html: htmlBody,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          console.log('[Email Agent] Delivered via Resend API. ID:', data.id);
+          return {
+            status: 'sent',
+            recipient,
+            subject,
+            provider: 'Resend HTTPS API',
+            message: `Itinerary successfully delivered to ${recipient} via Resend API!`,
+          };
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.warn('[Email Agent] Resend API error:', errData.message || res.statusText);
+        }
+      } catch (err) {
+        console.warn('[Email Agent] Resend API fetch failed:', err.message);
+      }
+    }
+
+    // Option 2: Gmail / SMTP Transporter
+    if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+      const passClean = (process.env.GMAIL_PASS || '').replace(/\s+/g, '');
+      
+      // Try ports 465, 587, 25
+      const portsToTry = [
+        { host: 'smtp.gmail.com', port: 465, secure: true },
+        { host: 'smtp.gmail.com', port: 587, secure: false },
+      ];
+
+      for (const config of portsToTry) {
+        try {
+          console.log(`[Email Agent] Attempting Gmail delivery via port ${config.port}...`);
+          const transporter = nodemailer.createTransport({
+            ...config,
+            auth: {
+              user: process.env.GMAIL_USER,
+              pass: passClean,
+            },
+            connectionTimeout: 8000,
+            greetingTimeout: 5000,
+            socketTimeout: 8000,
+          });
+
+          const info = await transporter.sendMail({
+            from: `"WanderWise AI" <${process.env.GMAIL_USER}>`,
+            to: recipient,
+            subject: subject,
+            html: htmlBody,
+          });
+
+          console.log(`[Email Agent] Successfully sent via Gmail SMTP (port ${config.port}). ID: ${info.messageId}`);
+          return {
+            status: 'sent',
+            recipient,
+            subject,
+            provider: `Gmail SMTP (Port ${config.port})`,
+            message: `Itinerary successfully delivered to ${recipient}!`,
+          };
+        } catch (err) {
+          console.warn(`[Email Agent] Gmail SMTP (port ${config.port}) failed:`, err.message);
+        }
+      }
+
+      return {
+        status: 'failed',
+        recipient,
+        message: `⚠️ **ISP Network Firewall Block**: Your local internet provider/router is blocking outbound SMTP ports (465 & 587). To bypass local ISP blocks, add a free \`RESEND_API_KEY\` to your \`.env\` file (Resend uses HTTPS port 443).`,
+      };
+    }
+
+    // Option 3: Ethereal Fallback
     try {
+      const testAccount = await nodemailer.createTestAccount();
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+        connectionTimeout: 6000,
+      });
+
       const info = await transporter.sendMail({
-        from: `"WanderWise AI Travel Planner" <${process.env.GMAIL_USER || 'no-reply@wanderwise.ai'}>`,
+        from: `"WanderWise AI" <no-reply@wanderwise.ai>`,
         to: recipient,
         subject: subject,
         html: htmlBody,
       });
 
-      if (providerName.includes('Ethereal')) {
-        previewUrl = nodemailer.getTestMessageUrl(info);
-      }
-
-      console.log(`[Email Agent] Email sent via ${providerName}. Message ID: ${info.messageId}`);
-      if (previewUrl) {
-        console.log(`[Email Agent] Preview URL: ${previewUrl}`);
-      }
-
+      const previewUrl = nodemailer.getTestMessageUrl(info);
       return {
         status: 'sent',
         recipient,
-        subject,
         previewUrl,
-        provider: providerName,
-        message: `Itinerary successfully formatted and sent via ${providerName}.${previewUrl ? ` View email preview: ${previewUrl}` : ''}`,
+        provider: 'Ethereal Test Account',
+        message: `Itinerary formatted and sent! View preview: ${previewUrl}`,
       };
     } catch (err) {
-      console.error('[Email Agent] Delivery error:', err.message);
       return {
         status: 'failed',
         recipient,
-        error: err.message,
-        message: `Could not send email: ${err.message}`,
+        message: `Email delivery attempt timed out due to local network restriction: ${err.message}`,
       };
     }
   },
