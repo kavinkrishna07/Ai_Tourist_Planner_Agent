@@ -25,11 +25,10 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
   }
 
   const primaryModel = process.env.GROQ_MODEL || process.env.GROK_MODEL || 'llama-3.3-70b-versatile';
-  const fallbackModels = ['llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
+  const fallbackModels = ['llama-3.1-8b-instant'];
 
-  let rateLimitHit = false;
+  let dailyRateLimitHit = false;
 
-  // Try primary model first, followed by fast fallback models
   for (const model of [primaryModel, ...fallbackModels]) {
     try {
       console.log(`[${agentName}] Querying Grok API with model: ${model}...`);
@@ -51,19 +50,57 @@ export async function generateJSON({ systemPrompt, userPrompt, schema, agentName
         text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
       }
 
-      return JSON.parse(text);
-    } catch (err) {
-      if (err.message?.includes('429') || err.message?.includes('Rate limit') || err.message?.includes('TPD')) {
-        rateLimitHit = true;
+      try {
+        return JSON.parse(text);
+      } catch (parseErr) {
+        // Fallback for unescaped newlines inside string values
+        const sanitized = text.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+        return JSON.parse(sanitized);
       }
+    } catch (err) {
+      if (err.message?.includes('TPD') || (err.message?.includes('429') && err.message?.includes('daily'))) {
+        dailyRateLimitHit = true;
+      }
+
+      const waitMatch = err.message?.match(/Please try again in ([\d.]+)(s|ms)/i);
+      if (waitMatch) {
+        const val = parseFloat(waitMatch[1]);
+        const unit = waitMatch[2];
+        const delayMs = Math.ceil(unit === 's' ? val * 1000 : val) + 300;
+        console.log(`[${agentName}] TPM rate limit pause. Waiting ${delayMs}ms before retry...`);
+        await new Promise(r => setTimeout(r, Math.min(delayMs, 10000)));
+
+        try {
+          const resRetry = await grok.chat.completions.create({
+            model,
+            messages: [
+              { role: 'system', content: `${systemPrompt}\n\nYou MUST respond ONLY with valid JSON. Do not include markdown codeblocks or extra text.` },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.7,
+          });
+          let textRetry = resRetry.choices[0]?.message?.content?.trim();
+          if (textRetry) {
+            if (textRetry.startsWith('```')) {
+              textRetry = textRetry.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+            }
+            const sanitizedRetry = textRetry.replace(/[\u0000-\u001F]/g, (ch) => ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '');
+            return JSON.parse(sanitizedRetry);
+          }
+        } catch (retryErr) {
+          console.warn(`[${agentName}] Model ${model} retry error:`, retryErr.message);
+        }
+      }
+
       console.warn(`[${agentName}] Grok API (${model}) error:`, err.message);
     }
   }
 
-  console.warn(`[${agentName}] All Grok models exhausted or errored (Rate limit hit: ${rateLimitHit}). Using fallback.`);
+  console.warn(`[${agentName}] All Grok models exhausted or errored (Daily Limit: ${dailyRateLimitHit}). Using fallback.`);
   const mock = generateMockJSONResponse(agentName, userPrompt);
-  if (rateLimitHit && agentName === 'Travel Manager') {
-    mock.response = `⚠️ **Groq API Rate Limit Reached (429)**: The daily token limit for your free Groq API key has been exceeded.\n\nTo resume full real-time AI capabilities, please update your \`GROQ_API_KEY\` in your \`.env\` file.\n\n${mock.response || ''}`;
+  if (dailyRateLimitHit && agentName === 'Travel Manager') {
+    mock.response = `⚠️ **Groq API Daily Limit Reached (429)**: The daily token limit for your Groq API key has been reached.\n\nPlease update your \`GROQ_API_KEY\` in your \`.env\` file.\n\n${mock.response || ''}`;
   }
   return mock;
 }
@@ -96,7 +133,7 @@ export async function generateText({ systemPrompt, userPrompt }) {
   return 'Grok API service fallback response.';
 }
 
-function generateMockJSONResponse(agentName, userPrompt) {
+export function generateMockJSONResponse(agentName, userPrompt) {
   const destination = extractField(userPrompt, 'Destination') || 'your destination';
   const days = Math.max(1, Math.min(7, Number(extractField(userPrompt, 'Days') || '5')));
   const budget = extractField(userPrompt, 'Budget') || 'moderate';

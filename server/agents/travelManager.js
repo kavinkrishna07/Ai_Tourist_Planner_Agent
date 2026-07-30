@@ -32,8 +32,8 @@ const AGENT_RUNNERS = {
   'Email Agent': emailAgent,
 };
 
-const INTENT_SYSTEM_PROMPT = `You are the Travel Manager (Intent & Context Extractor) for an AI Travel Planner system.
-Your job is to analyze the user's message, current context, and stored long-term preferences, and return a structured JSON decision.
+const INTENT_SYSTEM_PROMPT = `You are the Travel Manager (Intent & Context Extractor) for WanderWise Multi-Agent Travel System.
+Analyze the user's message, current context, and stored long-term preferences, and return a structured JSON decision.
 
 AVAILABLE SPECIALIST AGENTS:
 - "Casual Chat Agent": Handles casual greetings (hi, hello, how are you), general chitchat, or non-travel queries.
@@ -202,7 +202,23 @@ At the very end of your response, ALWAYS include 3 distinct follow-up questions 
     }
   }
 
-  // Step 5: Synthesize Final Output
+  // Direct return for Casual Chat Agent
+  if (intentData.intentCategory === 'casual_chat' && agentOutputs.length === 1 && agentOutputs[0].agent === 'Casual Chat Agent') {
+    const casualData = agentOutputs[0].data || {};
+    const chatResponse = casualData.reply || casualData.greeting || `Hello! I'm WanderWise, your Multi-Agent AI Travel Planner. Where would you like to travel next?`;
+    await memoryAgent.saveConversation('assistant', chatResponse);
+    return {
+      response: chatResponse,
+      extractedContext: mergedContext,
+      userMemory: userMemory.preferences,
+      agents: [
+        { agent: 'Memory Agent', role: memoryAgent.role, data: userMemory.preferences },
+        ...agentOutputs,
+      ],
+    };
+  }
+
+  // Step 5: Synthesize Final Output for Trip Planning & Specific Queries
   const synthesis = await synthesizeItinerary(mergedContext, agentOutputs, userMemory.preferences, intentData);
 
   // Save Assistant response and trip details to Memory
@@ -233,18 +249,27 @@ At the very end of your response, ALWAYS include 3 distinct follow-up questions 
 async function synthesizeItinerary(tripContext, agentOutputs, userMemoryPreferences, intentData) {
   const { message } = tripContext;
 
-  const systemPrompt = `You are the Travel Manager Agent — the coordinator of a multi-agent AI travel planning system.
-Your role: Synthesize outputs from specialist agents into a clear, engaging, and well-structured markdown response answering the user's request.
-Requirements:
-1. Direct Answer: Directly address the user's specific request.
-2. Structured Layout: Use Markdown headings, bullet points, and clean formatting.
-3. Tailored Experience: Honor stored user memory preferences (e.g. food choices, accommodation tiers, avoided items).
-4. No Robotic Defaults: Do not insert arbitrary default locations if not requested.
-5. ALWAYS end your response with 3 specific, engaging follow-up questions under a "### ❓ What would you like to explore next?" heading so the user can easily continue the conversation.
+  const systemPrompt = `You are the Travel Manager Agent — the head coordinator of a multi-agent AI travel planning system.
+Your role: Synthesize all specialist agent outputs into an impressive, rich, beautifully formatted Markdown travel guide that wows the user.
+
+FORMATTING REQUIREMENTS:
+1. **Title & Overview**: Start with a warm greeting and high-level summary of the trip (${tripContext.destination ? `${tripContext.destination}` : ''}).
+2. **Structured Sections**: Organize output using clear H2 and H3 markdown headers:
+   - Weather Forecast (with Markdown table if data exists)
+   - Budget & Cost Breakdown (total, daily avg, savings tips)
+   - Accommodations & Stays (top areas & specific hotel options)
+   - Food & Culinary Highlights (must-try dishes & restaurants)
+   - Activities & Top Sights (sights, unique experiences)
+   - Day-by-Day Route & Transport (daily breakdown)
+   - Packing Checklist & Essentials
+   - Local Etiquette & Safety Advisories
+   - Email Status (if Email Agent ran)
+3. **Personalization**: Explicitly mention stored user memory preferences (e.g. food restrictions, avoided things, accommodation tier).
+4. **Mandatory Closing**: ALWAYS end your response with 3 specific, engaging follow-up questions under a "### ❓ What would you like to explore next?" heading.
 
 Output JSON schema:
 {
-  "response": "string — The final synthesized response answering the user's message using the agent outputs."
+  "response": "string — The final synthesized rich Markdown response."
 }`;
 
   const agentSummary = agentOutputs.map(({ agent, data }) => ({ agent, data }));
@@ -256,7 +281,7 @@ Stored User Memory: ${JSON.stringify(userMemoryPreferences || {})}
 Specialist Agent Outputs:
 ${JSON.stringify(agentSummary, null, 2)}
 
-Synthesize a comprehensive, friendly, and structured Markdown response.`;
+Synthesize a comprehensive, friendly, and beautifully structured Markdown response.`;
 
   try {
     const result = await generateJSON({
@@ -270,7 +295,7 @@ Synthesize a comprehensive, friendly, and structured Markdown response.`;
     console.error('[Travel Manager] Synthesis error:', err.message);
     const fallbackText = agentOutputs.map(a => `### ${a.agent}\n${JSON.stringify(a.data, null, 2)}`).join('\n\n');
     return {
-      response: `Here is the information compiled by our specialist travel agents for your request:\n\n${fallbackText}`
+      response: `Here is the information compiled by our specialist travel agents for your request:\n\n${fallbackText}\n\n### ❓ What would you like to explore next?\n1. Would you like to refine the daily activities?\n2. Should I adjust the accommodation or budget options?\n3. Would you like this itinerary emailed to you?`
     };
   }
 }
