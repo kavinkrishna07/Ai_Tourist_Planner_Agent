@@ -224,15 +224,7 @@ export function generateMockJSONResponse(agentName, userPrompt) {
       },
       essentials: ['Reusable water bottle', 'Daypack', 'Portable charger', 'Copy of important documents'],
     },
-    'Travel Manager': {
-      response: `### 🌴 Welcome to WanderWise Travel Planner!
-
-I have coordinated with our specialist agents to draft a summary for your request:
-
-- **Weather**: Pleasant temperatures and clear skies.
-- **Budget**: Standard costs are optimized for a moderate budget.
-- **Activities**: Top-rated sights and unique experiences have been scheduled.`,
-    },
+    'Travel Manager': {},
   };
 
   return mockResponses[agentName] || {};

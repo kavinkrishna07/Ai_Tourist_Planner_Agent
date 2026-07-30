@@ -13,6 +13,7 @@ const AGENT_ICONS = {
   'Packing Agent': '🧳',
   'Safety Agent': '🛡️',
   'Local Guide': '🌍',
+  'Time Manager': '⏰',
   'Email Agent': '📧',
   'Travel Manager': '✈️',
 };
