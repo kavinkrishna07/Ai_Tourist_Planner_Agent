@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { MemoryBadge } from './components/MemoryBadge';
+import ItineraryDrawer from './components/ItineraryDrawer';
+import LoadingState from './components/LoadingState';
+import IntroSplashScreen from './components/IntroSplashScreen';
+import PaperRocketSVG from './components/PaperRocketSVG';
+import AuroraFlightTrail from './components/background/AuroraFlightTrail';
 
 const AGENT_ICONS = {
   'Memory Agent': '🧠',
@@ -26,6 +32,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeAgents, setActiveAgents] = useState([]);
   const [userMemory, setUserMemory] = useState(null);
+  
+  // Intro & Drawer States
+  const [isIntroComplete, setIsIntroComplete] = useState(() => sessionStorage.getItem('hasSeenIntro') === 'true');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerContent, setDrawerContent] = useState('');
+  const [drawerDest, setDrawerDest] = useState('');
+  const [isCompleted, setIsCompleted] = useState(false);
+
   const messagesEndRef = useRef(null);
 
   const fetchMemory = async () => {
@@ -60,6 +74,7 @@ export default function App() {
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
     setInput('');
     setIsLoading(true);
+    setIsCompleted(false);
     setActiveAgents(['Memory Agent']);
 
     const eventSource = new EventSource(`/api/chat?message=${encodeURIComponent(userMessage)}`);
@@ -81,12 +96,24 @@ export default function App() {
 
     eventSource.addEventListener('complete', (e) => {
       const data = JSON.parse(e.data);
-      setMessages(prev => [...prev, { role: 'assistant', text: data.response }]);
+      const resText = data.response || 'Plan calculated.';
+      const dest = data.extractedContext?.destination || '';
+
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        text: resText, 
+        isItinerary: resText.includes('###') || resText.includes('Itinerary'),
+        destination: dest,
+      }]);
+
       if (data.userMemory) {
         setUserMemory(prev => ({ ...prev, preferences: data.userMemory }));
       }
-      setIsLoading(false);
-      setActiveAgents([]);
+
+      // Prepare drawer content and trigger cinematic completion sequence
+      setDrawerContent(resText);
+      setDrawerDest(dest);
+      setIsCompleted(true);
       eventSource.close();
       fetchMemory();
     });
@@ -108,31 +135,81 @@ export default function App() {
     });
   };
 
+  const openDrawerForMessage = (text, dest) => {
+    setDrawerContent(text);
+    setDrawerDest(dest || '');
+    setDrawerOpen(true);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden relative">
-      {/* Dynamic Background Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-teal-600/30 blur-[120px] rounded-full mix-blend-screen animate-pulse"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 blur-[120px] rounded-full mix-blend-screen"></div>
-      </div>
+      
+      {/* Intro Cinematic Splash Screen (Runs once per session) */}
+      {!isIntroComplete && (
+        <IntroSplashScreen onIntroComplete={() => setIsIntroComplete(true)} />
+      )}
 
+      {/* Dynamic Single Aurora Flight Trail (Middle-Right to Left) */}
+      <AuroraFlightTrail />
+      <div className="fixed inset-0 bg-slate-950/20 backdrop-blur-md z-[-2] pointer-events-none" />
+
+      {/* Side Panel Drawer */}
+      <ItineraryDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        itineraryText={drawerContent}
+        destination={drawerDest}
+      />
+
+      {/* Top Navbar Header */}
       <header className="z-10 bg-slate-900/60 backdrop-blur-xl border-b border-white/10 sticky top-0 flex-none px-6 py-4 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-tr from-teal-400 to-indigo-500 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-teal-500/20">
-            ✈️
-          </div>
-          <div>
-            <h1 className="font-sans text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-indigo-300 tracking-tight">WanderWise</h1>
-            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Multi-Agent Travel Planner</p>
-          </div>
-        </div>
+        <motion.div 
+          className="flex items-center gap-4"
+          layoutId="brand-header-container"
+          transition={{ type: 'spring', stiffness: 90, damping: 18 }}
+        >
+          <motion.div 
+            layoutId="brand-logo-icon"
+            className="w-12 h-12 bg-gradient-to-tr from-teal-400 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-teal-500/20 border border-teal-300/30"
+          >
+            <PaperRocketSVG className="w-8 h-8 transform -rotate-12" />
+          </motion.div>
 
-        <div className="flex items-center gap-3">
+          <motion.div layoutId="brand-text-container">
+            <h1 className="font-sans text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-indigo-300 tracking-tight">
+              WanderWise
+            </h1>
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Multi-Agent Travel Planner</p>
+          </motion.div>
+        </motion.div>
+
+        {/* Staggered Navbar Action Controls */}
+        <motion.div 
+          className="flex items-center gap-3"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: isIntroComplete ? 1 : 0, x: isIntroComplete ? 0 : 20 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          {drawerContent && (
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="px-4 py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 text-xs font-semibold border border-teal-400/30 shadow-md transition-all flex items-center gap-2"
+            >
+              <PaperRocketSVG className="w-4 h-4 inline transform -rotate-12" />
+              <span>Open Side Panel</span>
+            </button>
+          )}
           <MemoryBadge memory={userMemory} onRefreshMemory={fetchMemory} />
-        </div>
+        </motion.div>
       </header>
 
-      <main className="z-10 flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth">
+      {/* Main Chat Interface */}
+      <motion.main 
+        className="z-10 flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: isIntroComplete ? 1 : 0, y: isIntroComplete ? 0 : 20 }}
+        transition={{ duration: 0.6, delay: 0.3 }}
+      >
         <div className="max-w-4xl mx-auto space-y-8">
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-4 fade-in duration-500`}>
@@ -147,64 +224,66 @@ export default function App() {
                   : 'bg-white/10 backdrop-blur-md border border-white/10 text-slate-100 rounded-tl-none'
               }`}>
                 <div className="whitespace-pre-wrap leading-relaxed text-[15px]">{msg.text}</div>
+                {msg.isItinerary && (
+                  <div className="mt-4 pt-3 border-t border-white/10">
+                    <button
+                      onClick={() => openDrawerForMessage(msg.text, msg.destination)}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-indigo-600 text-white text-xs font-bold shadow-lg hover:brightness-110 transition-all"
+                    >
+                      <PaperRocketSVG className="w-4 h-4 inline transform -rotate-12" />
+                      <span>View Full Itinerary Side Panel</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
           
           {isLoading && (
-            <div className="flex justify-start animate-in fade-in duration-500">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center mr-3 mt-1 shrink-0 shadow-md">
-                ✨
-              </div>
-              <div className="max-w-[85%] rounded-3xl p-6 bg-white/5 backdrop-blur-xl border border-white/10 text-slate-100 rounded-tl-none shadow-xl">
-                <div className="flex flex-col gap-5">
-                  <div className="flex items-center gap-3 text-teal-300 font-medium tracking-wide text-sm">
-                    <div className="w-2 h-2 rounded-full bg-teal-400 animate-ping"></div>
-                    Agents Collaborating...
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    {activeAgents.length === 0 && (
-                      <span className="text-xs text-slate-400 italic">Travel Manager is thinking...</span>
-                    )}
-                    {activeAgents.map((agent, i) => (
-                      <span key={i} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/20 text-indigo-200 text-sm font-semibold border border-indigo-400/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
-                        <span>{AGENT_ICONS[agent] || '🤖'}</span>
-                        {agent}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            <div className="my-6">
+              <LoadingState 
+                activeAgents={activeAgents} 
+                isCompleted={isCompleted}
+                onDeliveryComplete={() => {
+                  setIsLoading(false);
+                  setActiveAgents([]);
+                  setDrawerOpen(true);
+                }}
+              />
             </div>
           )}
           <div ref={messagesEndRef} className="h-4" />
         </div>
-      </main>
+      </motion.main>
 
-      <footer className="z-10 bg-slate-900/60 backdrop-blur-xl border-t border-white/10 p-4 sm:p-6 flex-none">
+      {/* Input Form Footer */}
+      <motion.footer 
+        className="z-10 bg-slate-900/60 backdrop-blur-xl border-t border-white/10 p-4 sm:p-6 flex-none"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: isIntroComplete ? 1 : 0, y: isIntroComplete ? 0 : 20 }}
+        transition={{ duration: 0.6, delay: 0.4 }}
+      >
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="flex gap-3 relative group">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Where to next? e.g., 5 days in Kyoto for a foodie..."
+              placeholder="Where to next? e.g., 5 days in Goa starting mid august..."
               className="flex-1 px-6 py-4 rounded-2xl bg-white/5 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-white placeholder-slate-400 backdrop-blur-sm transition-all shadow-inner"
               disabled={isLoading}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 top-2 bottom-2 px-6 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)] disabled:shadow-none flex items-center justify-center"
+              className="px-8 py-4 bg-gradient-to-r from-teal-500 to-indigo-600 hover:from-teal-400 hover:to-indigo-500 disabled:opacity-50 text-white font-bold rounded-2xl transition-all shadow-lg hover:shadow-teal-500/25 active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
             >
-              Send
+              <span>Send</span>
+              <PaperRocketSVG className="w-5 h-5 inline transform -rotate-12" />
             </button>
           </form>
-          <div className="text-center mt-3 text-xs text-slate-500 font-medium">
-            Powered by 11 specialized AI agents including Memory Agent & MongoDB storage.
-          </div>
         </div>
-      </footer>
+      </motion.footer>
     </div>
   );
 }

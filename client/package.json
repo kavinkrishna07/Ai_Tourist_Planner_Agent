@@ -10,8 +10,11 @@
   },
   "dependencies": {
     "ai-travel-planner": "file:..",
+    "framer-motion": "^12.43.0",
+    "ogl": "^1.0.11",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

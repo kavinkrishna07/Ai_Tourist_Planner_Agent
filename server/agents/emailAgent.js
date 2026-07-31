@@ -156,7 +156,7 @@ function extractEmailFromText(text) {
 
 function generateHtmlEmail(destination, markdownText, recipient) {
   const formattedContent = markdownText
-    .replace(/^### (.*$)/gim, '<h3 style="color: #0d9488; font-size: 18px; margin-top: 20px;">$1</h3>')
+    .replace(/^### (.*$)/gim, '<h3 style="color: #0d9488; font-size: 18px; margin-top: 20px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px;">$1</h3>')
     .replace(/^## (.*$)/gim, '<h2 style="color: #4f46e5; font-size: 22px; margin-top: 25px;">$1</h2>')
     .replace(/^# (.*$)/gim, '<h1 style="color: #0f172a; font-size: 26px; margin-top: 30px;">$1</h1>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -171,18 +171,29 @@ function generateHtmlEmail(destination, markdownText, recipient) {
     <title>Your WanderWise Travel Itinerary</title>
   </head>
   <body style="font-family: Arial, sans-serif; background-color: #f8fafc; color: #334155; margin: 0; padding: 20px;">
-    <div style="max-w: 650px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+    <div style="max-width: 680px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
       <!-- Header -->
       <div style="background: linear-gradient(135deg, #0d9488 0%, #4f46e5 100%); padding: 35px 30px; text-align: center; color: #ffffff;">
         <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">✈️ WanderWise</h1>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">AI Travel Planner</p>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px;">AI Multi-Agent Travel Planner</p>
       </div>
 
       <!-- Main Body -->
       <div style="padding: 30px; line-height: 1.6; font-size: 15px;">
-        <p style="margin-top: 0;">Hello Traveler,</p>
-        <p>Here is your personalized AI-generated travel plan for <strong>${destination}</strong>!</p>
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="margin-top: 0; font-size: 16px;">Hello Traveler,</p>
+        <p>Here is your executive travel summary and full itinerary for <strong>${destination}</strong>, compiled by our 14 specialized AI agents!</p>
+
+        <!-- Brief Executive Summary Box -->
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 20px; margin: 20px 0;">
+          <h3 style="margin-top: 0; color: #166534; font-size: 16px;">📌 Executive Trip Summary</h3>
+          <ul style="margin: 0; padding-left: 20px; color: #15803d; font-size: 14px;">
+            <li><strong>Destination</strong>: ${destination}</li>
+            <li><strong>Collaborating Agents</strong>: Weather, Budget, Route Planner, Hotel, Food, Activity, Time Manager, Packing, Safety, Local Guide</li>
+            <li><strong>Full Itinerary</strong>: Included below with opening hours, daily time slots, cost breakdown & packing checklist.</li>
+          </ul>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0;" />
         
         <div>
           ${formattedContent}
@@ -191,7 +202,7 @@ function generateHtmlEmail(destination, markdownText, recipient) {
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0 20px 0;" />
         <p style="font-size: 13px; color: #64748b; text-align: center;">
           Sent to <strong>${recipient}</strong> by WanderWise Multi-Agent System.<br/>
-          Need to make changes? Simply reply back to chat with your AI Travel Planner.
+          Need to refine your trip? Simply reply back in your chat window to update details anytime.
         </p>
       </div>
     </div>
